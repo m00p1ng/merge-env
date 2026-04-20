@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-merge_env.py — merge .env and JSON files, later files override earlier ones.
+merge_env.py - merge .env and JSON files, later files override earlier ones.
 
 Usage:
   merge_env.py [OPTIONS] [FILE...]
@@ -19,11 +19,12 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 
-def parse_env(text: str) -> dict:
+def parse_env(text: str) -> dict[str, str]:
     """Parse a .env-style file into a dict."""
-    result = {}
+    result: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -40,15 +41,17 @@ def parse_env(text: str) -> dict:
     return result
 
 
-def parse_json(text: str) -> dict:
+def parse_json(text: str) -> dict[str, str]:
     """Parse a JSON file into a flat string dict."""
-    data = json.loads(text)
-    if not isinstance(data, dict):
+    # json.loads returns an untyped value; check it at runtime and use it if it's a dict.
+    obj = cast(object, json.loads(text))
+    if not isinstance(obj, dict):
         raise ValueError("JSON root must be an object")
+    data = cast(dict[str, object], obj)
     return {str(k): str(v) for k, v in data.items()}
 
 
-def detect_and_parse(text: str, hint: str = "") -> dict:
+def detect_and_parse(text: str, hint: str = "") -> dict[str, str]:
     """Auto-detect format and parse."""
     stripped = text.strip()
     if stripped.startswith("{"):
@@ -59,9 +62,9 @@ def detect_and_parse(text: str, hint: str = "") -> dict:
     return parse_env(text)
 
 
-def format_env(data: dict) -> str:
+def format_env(data: dict[str, str]) -> str:
     """Render dict as .env format."""
-    lines = []
+    lines: list[str] = []
     for key, value in data.items():
         # Quote values that contain spaces or special characters
         if re.search(r'[\s"\'\\#]', value) or value == "":
@@ -70,7 +73,7 @@ def format_env(data: dict) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def format_json(data: dict) -> str:
+def format_json(data: dict[str, str]) -> str:
     """Render dict as pretty JSON."""
     return json.dumps(data, indent=2) + "\n"
 
@@ -83,26 +86,43 @@ def read_source(path: str) -> tuple[str, str]:
     return p.read_text(), p.name
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Merge .env and JSON files; later files override earlier ones.",
         add_help=False,
     )
-    parser.add_argument("files", nargs="*", default=["-"], metavar="FILE",
-                        help="Input files (.env or JSON). Use '-' for stdin.")
-    parser.add_argument("-o", "--output", metavar="FILE",
-                        help="Write output to FILE (default: stdout)")
-    parser.add_argument("-f", "--format", choices=["env", "json"], default="env",
-                        dest="fmt", help="Output format (default: env)")
-    parser.add_argument("-h", "--help", action="help",
-                        help="Show this help message")
+    _ = parser.add_argument(
+        "files",
+        nargs="*",
+        default=["-"],
+        metavar="FILE",
+        help="Input files (.env or JSON). Use '-' for stdin.",
+    )
+    _ = parser.add_argument(
+        "-o", "--output", metavar="FILE", help="Write output to FILE (default: stdout)"
+    )
+    _ = parser.add_argument(
+        "-f",
+        "--format",
+        choices=["env", "json"],
+        default="env",
+        dest="fmt",
+        help="Output format (default: env)",
+    )
+    _ = parser.add_argument(
+        "-h", "--help", action="help", help="Show this help message"
+    )
 
     args = parser.parse_args()
+    # Pull typed locals from the (dynamically-typed) Namespace to satisfy the type checker
+    files: list[str] = cast(list[str], args.files)
+    output_arg: str | None = cast(str | None, args.output)
+    fmt: str = cast(str, args.fmt)
 
-    merged: dict = {}
-    stdin_used = False
+    merged: dict[str, str] = {}
+    stdin_used: bool = False
 
-    for path in args.files:
+    for path in files:
         if path == "-":
             if stdin_used:
                 parser.error("stdin ('-') can only be used once")
@@ -126,12 +146,12 @@ def main():
 
         merged.update(data)
 
-    output = format_json(merged) if args.fmt == "json" else format_env(merged)
+    output = format_json(merged) if fmt == "json" else format_env(merged)
 
-    if args.output:
-        Path(args.output).write_text(output)
+    if output_arg:
+        _ = Path(output_arg).write_text(output)
     else:
-        sys.stdout.write(output)
+        _ = sys.stdout.write(output)
 
 
 if __name__ == "__main__":

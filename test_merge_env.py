@@ -2,6 +2,8 @@ import json
 import sys
 from io import StringIO
 from unittest.mock import patch
+from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -80,11 +82,11 @@ class TestParseJson:
 
     def test_non_object_raises(self):
         with pytest.raises(ValueError, match="JSON root must be an object"):
-            parse_json('["a", "b"]')
+            _ = parse_json('["a", "b"]')
 
     def test_invalid_json_raises(self):
         with pytest.raises(json.JSONDecodeError):
-            parse_json("not json")
+            _ = parse_json("not json")
 
     def test_empty_object(self):
         assert parse_json("{}") == {}
@@ -177,7 +179,7 @@ class TestFormatJson:
 # ---------------------------------------------------------------------------
 
 
-def run_main(argv, stdin_text=None):
+def run_main(argv: list[str], stdin_text: str | None = None) -> tuple[int, str, str]:
     """Call main() with patched sys.argv and optional stdin, capture stdout/stderr."""
     import merge_env
 
@@ -186,7 +188,7 @@ def run_main(argv, stdin_text=None):
     stdin_buf = StringIO(stdin_text or "")
 
     with (
-        patch.object(sys, "argv", ["merge_env.py"] + argv),
+        patch.object(sys, "argv", ["merge_env.py"] + list(argv)),
         patch("sys.stdout", stdout_buf),
         patch("sys.stderr", stderr_buf),
         patch("sys.stdin", stdin_buf),
@@ -195,51 +197,53 @@ def run_main(argv, stdin_text=None):
             merge_env.main()
             exit_code = 0
         except SystemExit as e:
-            exit_code = e.code
+            # SystemExit.code may be None or an int; normalize to int
+            code = e.code
+            exit_code = int(code) if isinstance(code, int) else 1
 
     return exit_code, stdout_buf.getvalue(), stderr_buf.getvalue()
 
 
 class TestMainIntegration:
-    def test_single_env_file(self, tmp_path):
+    def test_single_env_file(self, tmp_path: Path):
         f = tmp_path / "a.env"
-        f.write_text("FOO=1\nBAR=2\n")
+        _ = f.write_text("FOO=1\nBAR=2\n")
         code, out, _ = run_main([str(f)])
         assert code == 0
         assert "FOO=1" in out
         assert "BAR=2" in out
 
-    def test_single_json_file(self, tmp_path):
+    def test_single_json_file(self, tmp_path: Path):
         f = tmp_path / "a.json"
-        f.write_text('{"FOO": "1"}')
+        _ = f.write_text('{"FOO": "1"}')
         code, out, _ = run_main([str(f)])
         assert code == 0
         assert "FOO=1" in out
 
-    def test_later_file_overrides_earlier(self, tmp_path):
+    def test_later_file_overrides_earlier(self, tmp_path: Path):
         a = tmp_path / "a.env"
-        a.write_text("KEY=old\n")
+        _ = a.write_text("KEY=old\n")
         b = tmp_path / "b.env"
-        b.write_text("KEY=new\n")
+        _ = b.write_text("KEY=new\n")
         code, out, _ = run_main([str(a), str(b)])
         assert code == 0
         assert "KEY=new" in out
         assert "KEY=old" not in out
 
-    def test_merge_env_and_json(self, tmp_path):
+    def test_merge_env_and_json(self, tmp_path: Path):
         a = tmp_path / "base.env"
-        a.write_text("A=1\nB=old\n")
+        _ = a.write_text("A=1\nB=old\n")
         b = tmp_path / "override.json"
-        b.write_text('{"B": "new", "C": "3"}')
+        _ = b.write_text('{"B": "new", "C": "3"}')
         code, out, _ = run_main([str(a), str(b)])
         assert code == 0
         assert "A=1" in out
         assert "B=new" in out
         assert "C=3" in out
 
-    def test_stdin_as_dash(self, tmp_path):
+    def test_stdin_as_dash(self, tmp_path: Path):
         f = tmp_path / "base.env"
-        f.write_text("A=1\n")
+        _ = f.write_text("A=1\n")
         code, out, _ = run_main([str(f), "-"], stdin_text="B=2\n")
         assert code == 0
         assert "A=1" in out
@@ -250,17 +254,17 @@ class TestMainIntegration:
         assert code == 0
         assert "FOO=bar" in out
 
-    def test_output_json_format(self, tmp_path):
+    def test_output_json_format(self, tmp_path: Path):
         f = tmp_path / "a.env"
-        f.write_text("FOO=bar\n")
+        _ = f.write_text("FOO=bar\n")
         code, out, _ = run_main(["-f", "json", str(f)])
         assert code == 0
-        data = json.loads(out)
+        data = cast(dict[str, str], json.loads(out))
         assert data == {"FOO": "bar"}
 
-    def test_output_to_file(self, tmp_path):
+    def test_output_to_file(self, tmp_path: Path):
         src = tmp_path / "a.env"
-        src.write_text("FOO=1\n")
+        _ = src.write_text("FOO=1\n")
         out_file = tmp_path / "out.env"
         code, stdout, _ = run_main(["-o", str(out_file), str(src)])
         assert code == 0
@@ -272,20 +276,20 @@ class TestMainIntegration:
         assert code == 1
         assert "file not found" in err
 
-    def test_invalid_json_exits_with_error(self, tmp_path):
+    def test_invalid_json_exits_with_error(self, tmp_path: Path):
         f = tmp_path / "bad.json"
-        f.write_text("{not valid json")
+        _ = f.write_text("{not valid json")
         code, _, err = run_main([str(f)])
         assert code == 1
         assert "could not parse" in err
 
-    def test_three_files_merged_in_order(self, tmp_path):
+    def test_three_files_merged_in_order(self, tmp_path: Path):
         a = tmp_path / "a.env"
-        a.write_text("X=1\nY=a\n")
+        _ = a.write_text("X=1\nY=a\n")
         b = tmp_path / "b.env"
-        b.write_text("Y=b\nZ=b\n")
+        _ = b.write_text("Y=b\nZ=b\n")
         c = tmp_path / "c.env"
-        c.write_text("Z=c\n")
+        _ = c.write_text("Z=c\n")
         code, out, _ = run_main([str(a), str(b), str(c)])
         assert code == 0
         assert "X=1" in out
