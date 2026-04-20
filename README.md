@@ -1,170 +1,195 @@
 # merge-env
 
-A lightweight CLI tool to merge multiple `.env` and JSON configuration files into a single environment representation. Later files override earlier ones, making it ideal for layered configuration workflows in scripts and CI/CD pipelines.
+A lightweight command-line utility for merging `.env` and JSON configuration files with support for multiple input formats and flexible output options.
 
 ## Features
 
-- **Multi-format support**: Merge `.env` files and JSON files seamlessly
-- **Auto-detection**: Automatically detects file format (with optional hints)
-- **Override behavior**: Later files override values from earlier files
-- **Flexible input**: Read from files or stdin
-- **Multiple output formats**: Output as `.env` or pretty-printed JSON
-- **Proper escaping**: Handles quotes, spaces, and special characters in values
-- **Comprehensive tests**: Full test suite with 30+ test cases
+- **Multi-format support**: Parse `.env` files and JSON configurations
+- **Automatic format detection**: Intelligently detect file format based on content or extension
+- **File merging**: Combine multiple configuration sources with later files overriding earlier ones
+- **Flexible I/O**: Read from files or stdin, write to stdout or file
+- **Multiple output formats**: Export as `.env` format or JSON
+- **Zero dependencies**: No external runtime dependencies
+- **Well-tested**: Comprehensive test suite with 47+ tests
 
 ## Installation
 
-### From source
+### Requirements
+- Python 3.12+
+- `uv` package manager (optional, but recommended)
 
-Clone the repository and install:
+### Setup
 
 ```bash
-git clone https://github.com/m00p1ng/merge-env.git
+# Clone the repository
+git clone <repository-url>
 cd merge-env
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
+
+# Create a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies (development)
+uv pip install -e ".[dev]"
+# or with pip
+pip install pytest
 ```
 
 ## Usage
 
-### Basic syntax
+### Basic Merging
+
+Merge multiple configuration files with later files overriding earlier ones:
 
 ```bash
-merge_env.py [OPTIONS] [FILE...]
+./merge_env.py base.env local.env > merged.env
 ```
 
-### Command-line options
+### Format Detection
 
-```
-  FILE                  Input files (.env or JSON). Use '-' for stdin.
-  -o, --output FILE     Write output to FILE (default: stdout)
-  -f, --format FORMAT   Output format: env (default) or json
-  -h, --help            Show this help message
-```
-
-### Examples
-
-#### Merge two `.env` files (second overrides first)
+The utility automatically detects file formats (`.env` or JSON):
 
 ```bash
-merge_env.py config.env secrets.env
+# Merge .env and JSON files
+./merge_env.py config.env settings.json
+
+# Explicitly specify output format
+./merge_env.py config.env settings.json -f json
 ```
 
-#### Merge `.env` and JSON files
+### Output to File
 
 ```bash
-merge_env.py defaults.env overrides.json
+./merge_env.py config.env local.env -o .env.production
 ```
 
-#### Read from stdin
+### Using stdin
+
+Read configuration from stdin:
 
 ```bash
-cat config.env | merge_env.py -
+echo "KEY=value" | ./merge_env.py - config.env
+cat base.env | ./merge_env.py - local.json
 ```
 
-#### Chain multiple files with stdin
+### Output Formats
 
+**Default (`.env` format)**:
 ```bash
-cat base.env | merge_env.py - overrides.env
+./merge_env.py config.env
+# Output:
+# DATABASE_URL=postgresql://localhost/db
+# API_KEY=secret123
 ```
 
-#### Output as JSON
-
+**JSON format**:
 ```bash
-merge_env.py --format json config.env secrets.json
+./merge_env.py config.env -f json
+# Output:
+# {
+#   "DATABASE_URL": "postgresql://localhost/db",
+#   "API_KEY": "secret123"
+# }
 ```
 
-#### Save output to a file
+## Command-line Options
 
-```bash
-merge_env.py -o merged.env config.env secrets.env
+```
+Usage: merge_env.py [OPTIONS] [FILE...]
+
+Arguments:
+  FILE                 Configuration files to merge (use - for stdin)
+
+Options:
+  -o, --output FILE    Write output to FILE instead of stdout
+  -f, --format FORMAT  Output format: env (default) or json
+  -h, --help           Show this help message and exit
 ```
 
-#### Output JSON to a file
+## Examples
+
+### Example 1: Development and Production Configs
+
+Merge a base configuration with environment-specific overrides:
 
 ```bash
-merge_env.py --format json -o merged.json config.env secrets.json
+# Base configuration (config.env)
+DATABASE_URL=sqlite:///:memory:
+DEBUG=false
+LOG_LEVEL=info
+
+# Production overrides (prod.env)
+DATABASE_URL=postgresql://prod-db:5432/app
+DEBUG=false
+LOG_LEVEL=warning
+
+# Merge them
+./merge_env.py config.env prod.env -o .env.production
 ```
 
-### File format details
+### Example 2: Multi-source Configuration
 
-#### `.env` format
+Combine settings from multiple sources:
 
-Standard dotenv format with support for:
-- Key-value pairs: `KEY=value`
-- Quoted values: `KEY="value with spaces"`
-- Comments: Lines starting with `#`
-- Empty values: `KEY=`
-
-Example:
 ```bash
-DATABASE_URL=postgres://localhost/mydb
-API_KEY="my-secret-key"
+./merge_env.py defaults.json secrets.json local-overrides.env -f json
+```
+
+### Example 3: CI/CD Pipeline
+
+Build configuration dynamically in a pipeline:
+
+```bash
+# Start with defaults
+cat defaults.env > .env
+
+# Apply environment-specific config
+./merge_env.py .env config.$ENVIRONMENT.env -o .env
+
+# Override with secrets (if available)
+if [ -f secrets.env ]; then
+  ./merge_env.py .env secrets.env -o .env
+fi
+```
+
+## File Formats
+
+### `.env` Format
+
+Standard key=value pairs, one per line:
+
+```env
+# Comments are supported
+DATABASE_URL=postgresql://localhost/db
+API_KEY=secret123
 DEBUG=true
-# This is a comment
-EMPTY_VAR=
+
+# Empty values are supported
+OPTIONAL_SETTING=
+
+# Values with spaces or special characters are quoted
+LONG_VALUE="This is a long value with spaces"
 ```
 
-#### JSON format
+### JSON Format
 
-Flat JSON object with string values:
+Standard JSON object with string values:
+
 ```json
 {
-  "DATABASE_URL": "postgres://localhost/mydb",
-  "API_KEY": "my-secret-key",
+  "DATABASE_URL": "postgresql://localhost/db",
+  "API_KEY": "secret123",
   "DEBUG": "true"
 }
 ```
 
-### Merge behavior
+Note: JSON arrays and primitives are not supported; the root must be an object.
 
-- Files are merged in order (left to right)
-- Later files override values from earlier files
-- All values are stored as strings
-- The final output format is determined by the `--format` flag
+## Behavior
 
-Example:
-```bash
-# config.env
-DATABASE_URL=postgres://localhost/dev
-DEBUG=false
+- **Override Strategy**: Later files override values from earlier files (last-write-wins)
+- **Type Coercion**: All values are stored and output as strings
+- **Escaping**: Special characters (quotes, backslashes) are properly escaped in `.env` output
+- **Comments**: Comments in `.env` files are stripped during parsing
+- **Whitespace**: Leading/trailing whitespace around keys is trimmed
 
-# secrets.env
-DATABASE_URL=postgres://prod-server/db
-API_KEY=super-secret
-
-# Merge command
-merge_env.py config.env secrets.env
-```
-
-Output:
-```
-DATABASE_URL=postgres://prod-server/db
-DEBUG=false
-API_KEY=super-secret
-```
-
-## Development
-
-### Run tests
-
-```bash
-pytest
-```
-
-### Run with verbose output
-
-```bash
-pytest -v
-```
-
-### Run specific test class
-
-```bash
-pytest test_merge_env.py::TestParseEnv -v
-```
-
-## License
-
-MIT
