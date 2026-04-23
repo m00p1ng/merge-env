@@ -122,6 +122,15 @@ def main() -> None:
     merged: dict[str, str] = {}
     stdin_used: bool = False
 
+    if output_arg:
+        output_path = Path(output_arg)
+        if output_path.exists():
+            try:
+                text = output_path.read_text()
+                merged.update(detect_and_parse(text, output_path.name))
+            except (OSError, json.JSONDecodeError, ValueError):
+                pass
+
     for path in files:
         if path == "-":
             if stdin_used:

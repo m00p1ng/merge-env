@@ -295,3 +295,45 @@ class TestMainIntegration:
         assert "X=1" in out
         assert "Y=b" in out
         assert "Z=c" in out
+
+    def test_output_file_used_as_base_when_exists(self, tmp_path: Path):
+        out_file = tmp_path / "out.env"
+        _ = out_file.write_text("HELLO=world\nKEY=1\n")
+        src = tmp_path / "override.env"
+        _ = src.write_text("HELLO=test\nFOO=bar\n")
+        code, _, _ = run_main(["-o", str(out_file), str(src)])
+        assert code == 0
+        result = out_file.read_text()
+        assert "HELLO=test" in result
+        assert "KEY=1" in result
+        assert "FOO=bar" in result
+
+    def test_output_file_as_base_stdin_override(self, tmp_path: Path):
+        out_file = tmp_path / "out.env"
+        _ = out_file.write_text("HELLO=world\nKEY=1\n")
+        code, _, _ = run_main(["-o", str(out_file)], stdin_text="HELLO=test\nFOO=bar\n")
+        assert code == 0
+        result = out_file.read_text()
+        assert "HELLO=test" in result
+        assert "KEY=1" in result
+        assert "FOO=bar" in result
+
+    def test_output_file_nonexistent_skips_base_load(self, tmp_path: Path):
+        out_file = tmp_path / "new.env"
+        src = tmp_path / "a.env"
+        _ = src.write_text("FOO=bar\n")
+        code, _, _ = run_main(["-o", str(out_file), str(src)])
+        assert code == 0
+        assert "FOO=bar" in out_file.read_text()
+
+    def test_output_file_base_json(self, tmp_path: Path):
+        out_file = tmp_path / "out.json"
+        _ = out_file.write_text('{"A": "1", "B": "old"}\n')
+        src = tmp_path / "override.env"
+        _ = src.write_text("B=new\nC=3\n")
+        code, _, _ = run_main(["-o", str(out_file), str(src)])
+        assert code == 0
+        result = out_file.read_text()
+        assert "A=1" in result
+        assert "B=new" in result
+        assert "C=3" in result
